@@ -221,6 +221,58 @@ python3 infer.py \
     --in_the_wild
 ```
 
+### Multi-GPU Inference (14B Model)
+
+For the 14B model with LoRA, single GPU may run out of memory. We provide a **single-process + module-level device assignment** solution:
+
+```bash
+bash scripts/infer_itw_4gpu.sh
+```
+
+#### Module Distribution
+
+| GPU | Physical GPU | Modules | Est. VRAM |
+|-----|--------------|---------|-----------|
+| cuda:0 | GPU4 | transformer.blocks[0:16] + scale_shift_table | ~35GB |
+| cuda:1 | GPU5 | transformer.blocks[16:40] + norm_out + proj_out | ~35GB |
+| cuda:2 | GPU6 | vae | ~8GB |
+| cuda:3 | GPU7 | text_encoder + image_encoder | ~2GB |
+
+#### Architecture
+
+```
+scripts/infer_itw_4gpu.sh
+    │
+    ├── export CUDA_VISIBLE_DEVICES=4,5,6,7
+    ├── export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    │
+    └── infer_multi_gpu.py (single process)
+            │
+            ├── GPU 0: transformer.blocks[:16]
+            ├── GPU 1: transformer.blocks[16:] + norm_out + proj_out
+            ├── GPU 2: vae
+            └── GPU 3: text_encoder + image_encoder
+```
+
+#### State Transfer at Block Boundaries
+
+When tensor passes between GPUs, **batch transfer all states**:
+- hidden_states
+- encoder_hidden_states
+- timestep_proj
+- rotary_emb
+- attention_GGA
+- attention_mask_GGA
+- cos_sim
+- temb
+
+#### Run Command
+
+```bash
+cd /share/project/hym/EgoX
+bash scripts/infer_itw_4gpu.sh
+```
+
 ## 🏋️ Training
 
 ### Data Preparation
